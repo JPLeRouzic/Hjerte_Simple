@@ -1,0 +1,512 @@
+/*
+ * So we have here an approach which is very progressive, yet delivers results in a short time. 
+It is also quite insensitive to sound events that could derail the 
+heart beat counting, as the first step provide some good indications of the 
+area where is the real heart beat, one spike makes the closer S1 perhaps not 
+detected, but we gain a good idea of the heart duration.
+
+5) In addition to S1, many other events are detected. A priori we assume that these 
+are the other events S2, S3, S4. Even numbers going higher than four, it is useful for 
+unusual heart sound classification.
+
+6) These two Sx events detections are brought closer together
+6-1) The list of S1 events is made more reliable, which makes it possible to 
+deduce the events S2, S3, S4 (Segmentation.java).
+6-2) A signature of the heart beat is computed to acknowledging there are more in 
+one heart beat than its time of arrival and duration. We tested several schemes, and 
+decided to use a Huffman compression of the heart beat. We had also the idea to use 
+this to yet another kind of feature detection without training but it is not 
+implemented at the moment because of lack of resources.
+
+7) From there one can either train a HMM, or classify. 
+We go out of cardiac specific, it’s just an HMM
+8) One interprets the classification made by the HMM, with a score of similarity and 
+comments on the events Sx
+ */
+package ML.Train;
+
+import ML.Classify.Observation;
+import ML.featureDetection.Event;
+import ML.featureDetection.FindBeats;
+import ML.featureDetection.FindEvents;
+import java.util.LinkedList;
+
+/**
+ *
+ * @author jplr
+ */
+public class Segmentation {
+
+    public LinkedList segmentedSounds;
+    private int S3Counter;
+    private int SxCounter;
+    private int S1sTotalDuration;
+    private int S1Counter;
+
+    public Segmentation() {
+        segmentedSounds = new LinkedList();
+        S3Counter = 0;
+        SxCounter = 0;
+        S1sTotalDuration = 0;
+        S1Counter = 0;
+    }
+
+    /**
+     *
+     * How do we know we are currently at S1? Let's check if we are close of a
+     * "probableS1Beats" Approximative structure of a beat:
+     *
+     * S1|EC|_|_|S2|OS|_|S3|_|_|_|S4||_|_|_|_| * There is a shorter duration
+     * between S1 and S2, than between S2 and S1 This dissymetry helps to
+     * recognize S1 from S2. S1 typically contains low frequency with longest
+     * duration and highest intensity, while S2 contains higher frequency with
+     * shorter duration. In addition to S1 and S2, third (S3) and a fourth heart
+     * sound (S4) may be present. S3 is a rare extra heart sound that occurs
+     * soon after the normal two "lub-dub" heart sounds (S1 and S2). S3 occurs
+     * 0.13 to 0.18 seconds after S2. S4 is a sound much closer to the next S1
+     * than to S2, and it may happen without any S3 * S3 in older people (40+)
+     * is associated with heart failure. S3 is more often heard in adults who
+     * are very lean. S3 is heard normally in 80% of pregnant women. * S3 and S4
+     * can occur in normal persons or be associated with pathological processes.
+     * Because of their cadence or rhythmic timing, S3 and S4 are called
+     * gallops. Gallops are low frequency sounds, lower than both S1 and S2. S4
+     * is longer than S3 * Systole duration (S1 to S2) varies less with heart
+     * rate than Diastole duration (S2 to S4). // In adults and older children
+     * with slower heart rates, systole is the shorter part of the cycle, so S1
+     * is heard relatively close to S2, and diastole is the longer component. At
+     * increased heart rates the duration of systole may become almost the same
+     * as the duration of diastole. * During inspiration the heart rate
+     * increases. As the associated increase in abdominal pressure and the
+     * corresponding decrease in intrathoracic pressure lead to increased venous
+     * return to the heart, the heart responds with increased stroke volume and
+     * heart rate.
+     *
+     * we have ProbableBeats which contains the probable S1 events and moreBeats
+     * which contains the probable S1, S2, S3, S4 We will use ProbableBeats to
+     * find the probable locations of other Sx events in moreBeats So we use
+     * moreBeats to detect events at proximity of the found time for S1 events.
+     * Once a S1 is detected, the nextPB Sx after this S1 and before the nextPB
+     * is supposed to be S2, and so on for S3 and S4.
+     *
+     * @param norm
+     * @param rate
+     */
+    public void segmentation(FindBeats norm, int rate) {
+        int countPB = 0;
+        int countMB = 0;
+        int curtsMB = 0;
+        LinkedList nPB = norm.getProbableBeats();
+        LinkedList nMB = norm.getMoreBeats();
+
+        int averageDistance; // average Distance between two beats
+        averageDistance = norm.getNormalizedData().length / nPB.size();
+
+        // How large are S1 in nPB in average?
+        // It will be used to qualify possible S1 events
+        int cumulDuration = 0;
+        int cumulatedDuration = 0;
+        for (int idx = 0; idx < nPB.size(); idx++) {
+            cumulDuration
+                    += ((Event) nPB.get(idx)).timeStampEnd()
+                    - ((Event) nPB.get(idx)).timeStampBeg();
+        }
+        cumulatedDuration = cumulDuration / nPB.size();
+
+        // Main loop browsing nMB to name (segment) events, with nPB as anchor for S1 beats
+        while (countPB < nPB.size()) {
+            int ret = mainLoop(
+                    nPB,
+                    nMB,
+                    countPB,
+                    countMB,
+                    curtsMB,
+                    norm,
+                    averageDistance);
+            if (ret == 0) {
+                countPB++;
+            }
+            if (ret == -1) {
+
+            } else {
+
+            }
+            LinkedList un = segmentedSounds; // debug
+        }
+
+//        setLVSTScore() ;
+    }
+
+    private int mainLoop(
+            LinkedList nPB,
+            LinkedList nMB,
+            int countPB,
+            int countMB,
+            int curtsMB,
+            FindBeats norm, int averageDistance) {
+
+//            System.out.println("Beat #" + countPB);
+        int curPB = ((Event) nPB.get(countPB)).timeStampEnd();
+        int aftPB = 0; // S1 after current S1
+        int bfrPB = 0; // S1 before current S1
+        if (countPB > 0) {
+            bfrPB = ((Event) nPB.get(countPB - 1)).timeStampEnd();
+        }
+        if (countPB < (nPB.size() - 1)) {
+            aftPB = ((Event) nPB.get(countPB + 1)).timeStampEnd();
+        } else {
+            aftPB = ((Event) nPB.get(nPB.size() - 1)).timeStampEnd();
+        }
+
+        // Is this as large as a S1 should be? (used for LSVT)
+        int S1Duration
+                = ((Event) nPB.get(countPB)).timeStampEnd()
+                - ((Event) nPB.get(countPB)).timeStampBeg();
+        addS1Length(S1Duration);
+        incS1Counter();
+
+        System.out.println("This is a S1: " + curPB);
+
+        thisIsS1(bfrPB,
+                curPB,
+                norm, aftPB);
+
+        if (countMB < nMB.size()) {
+            curtsMB = ((Event) nMB.get(countMB)).timeStampEnd();
+        } else {
+            return -1;
+        }
+
+        int nxttsPB = 0;
+        if (countPB < (nPB.size() - 1)) {
+            nxttsPB = ((Event) nPB.get(countPB + 1)).timeStampBeg();
+        } else {
+            nxttsPB = ((Event) nPB.get(nPB.size() - 1)).timeStampBeg();
+        }
+
+        int eventNbr = 2; // Like in S2
+        int S2Time = 0; // Used to detect a S4 event
+
+        while (curtsMB < nxttsPB) {
+            curtsMB = processNextSx(eventNbr, S2Time, nxttsPB,
+                    curtsMB, bfrPB, aftPB,
+                    norm, averageDistance,
+                    nPB, nMB);
+            if (curtsMB == -1) {
+
+            } else {
+
+            }
+            eventNbr++;
+        }
+        return 0; // Normal return
+    }
+
+    private int processNextSx(int eventNbr, int S2Time, int nxttsPB,
+            int curtsMB, int bfrPB,
+            int aftPB,
+            FindBeats norm, int averageDistance,
+            LinkedList nPB, LinkedList nMB) {
+
+        int countPB = 0, countMB = 0;
+        String S1name = new String("S1");
+        String S2name = new String("S2");
+        String S3name = new String("S3");
+        String S4name = new String("S4");
+
+//                    System.out.println("\tS2_" + (countPB - 1) + ", time= " + ((Event) nMB.get(countMB)).timeStampEnd());
+        if (eventNbr == 2) {
+            S2Time = curtsMB;
+        }
+        if (eventNbr > 2) {
+            int S2ToNxtTime = nxttsPB - S2Time;
+            thisIsS2(S2name, S2Time, bfrPB,
+                    aftPB,
+                    norm);
+
+            /* What now S1, S3 or S4? */
+            if (curtsMB > ((S2ToNxtTime * 0.45) + S2Time)) {
+                // Do not count glitches for S4
+                int uno = ((Event) nPB.get(countPB)).timeStampEnd() - curtsMB;
+                int duo = averageDistance / 50;
+                boolean S4NotGlitch = (uno) > (duo);
+                if (S4NotGlitch) {
+                    thisIsS4(bfrPB,
+                            nxttsPB,
+                            norm, curtsMB, S4name);
+                } // End S4 not glitch
+
+            } /* End if "what now S1, S3 or S4?" */ else {
+                thisIsS3(bfrPB,
+                        nxttsPB,
+                        norm, curtsMB, S3name, averageDistance);
+            }
+            /* End this is a S3 */
+        }
+        /* End if(eventNbr > 2) */
+
+        countMB++;
+        if (countMB < nMB.size()) {
+            curtsMB = ((Event) nMB.get(countMB)).timeStampEnd();
+        } else {
+            return -1;
+        }
+        return curtsMB;
+    }
+
+    private void thisIsS2(String S2name, int S2Time, int bfrPB,
+            int aftPB,
+            FindBeats norm) {
+        System.out.println("This is a S2: " + S2Time);
+        Observation eventHMM;
+        eventHMM = recordHMMObs(S2name,
+                "",
+                S2Time,
+                bfrPB,
+                aftPB,
+                norm);
+        if (eventHMM != null) {
+            addEvents(eventHMM);
+        } else {
+        }
+    }
+
+    private void thisIsS3(int bfrPB,
+            int nxttsPB,
+            FindBeats norm, int curtsMB, String S3name, double averageDistance) {
+        /* Begin this is a S3 */
+ /* S3 may not happen (in an older person it may signal a heart failure) */
+        this.incSxCounter();
+
+        System.out.println("This is a S3: " + curtsMB);
+        this.incS3Counter();
+
+        // S3 is a rare extra heart sound that occurs soon after the normal 
+        // two "lub-dub" heart sounds (S1 and S2).
+        // S3 occurs 0.13 to 0.18 seconds after S2. 
+        if (segmentedSounds.size() > 2) {
+            int idx = segmentedSounds.size() - 1;
+            if (idx >= 1) {
+                Observation obsLastS2 = (Observation) segmentedSounds.get(idx - 1);
+                if (obsLastS2.getNamePref().contentEquals("S2")) {
+                    // Last S1 timing
+                    int lastS2 = obsLastS2.getRawIndex();
+
+                    // Current S3 timing
+                    int curS3 = curtsMB;
+
+                    // Is this OK?
+                    // S3name has "S3" value at initialisation
+                    if (((curS3 - lastS2) < (averageDistance * 0.2))
+                            && ((curS3 - lastS2) > (averageDistance * 0.1))) {
+                        System.out.println("Not a S3");
+                        S3name = new String("S3alt");
+                    } else {
+//                                        this.incS3Counter();
+                    }
+                }
+            }
+        }
+
+//                        System.out.println("This is a S3: " + curtsMB);
+        int eventNbr = 3;
+        // Create and add a S2+ event
+//                      eventHMM = recordHMMObs("S" + String.valueOf(eventNbr),
+        Observation eventHMM = recordHMMObs(
+                S3name,
+                "",
+                curtsMB,
+                bfrPB,
+                nxttsPB,
+                norm);
+        if (eventHMM != null) {
+            addEvents(eventHMM);
+        } else {
+//                    System.out.println("This is a: " + "S" + String.valueOf(eventNbr));
+        }
+    }
+
+    private void thisIsS4(int bfrPB,
+            int nxttsPB,
+            FindBeats norm, int curtsMB, String S4name) {
+        Observation eventHMM;
+
+        /* This is a S4 */
+        System.out.println("This is a S4: " + curtsMB);
+        this.incSxCounter();
+        // S4 is a sound much closer to the next S1 than to last S2
+        if (segmentedSounds.size() > 2) {
+            int idx = segmentedSounds.size() - 1;
+            if (idx >= 2) {
+                Observation obsNextS1 = (Observation) segmentedSounds.get(idx - 1);
+                Observation obsLastS2 = (Observation) segmentedSounds.get(idx - 2);
+                if ((obsNextS1.getNamePref().contentEquals("S1"))
+                        && (obsLastS2.getNamePref().contentEquals("S2"))) {
+                    // Last S1 timing
+                    int nextS1 = obsNextS1.getRawIndex();
+
+                    // Current S2 timing
+                    int lastS2 = obsLastS2.getRawIndex();
+
+                    // This S4 timing
+                    int thisS4 = curtsMB;
+
+                    // Is this OK?
+                    if ((thisS4 - nextS1) > (thisS4 - lastS2)) {
+                        System.out.println("Not a S4");
+                        S4name = new String("S4alt");
+                    }
+                }
+            }
+        }
+
+        int eventNbr = 4;
+        // Create and add a S2+ event
+//                          eventHMM = recordHMMObs("S" + String.valueOf(eventNbr),
+        eventHMM = recordHMMObs(
+                S4name,
+                "",
+                curtsMB,
+                bfrPB,
+                nxttsPB,
+                norm);
+        if (eventHMM != null) {
+            addEvents(eventHMM);
+        } else {
+//                    System.out.println("This is a: " + "S" + String.valueOf(eventNbr));
+        }
+    }
+
+    private void thisIsS1(int bfrPB,
+            int curPB,
+            FindBeats norm, int aftPB) {
+        String S1name = new String("S1");
+
+        /* S1 verification step */
+        if (segmentedSounds.size() > 2) {
+            S1name = isTrueS1(curPB);
+        }
+//
+        /* Observation recordHMMObs(
+            String pref, String sufx, int Sx,
+            int S1base, int S1next,
+            FindBeats norm)
+         */
+        Observation eventHMM = recordHMMObs(S1name,
+                "",
+                curPB,
+                bfrPB,
+                aftPB,
+                norm);
+        if (eventHMM != null) {
+            addEvents(eventHMM);
+        } else {
+        }
+    }
+
+    private String isTrueS1(int curPB) {
+        String S1name = new String("S1");
+
+        // There should be a shorter duration between last S1 and current S2, than 
+        // between S2 and next S1 
+        int idx = segmentedSounds.size() - 1;
+        if (idx >= 2) {
+            Observation obsLastS1 = (Observation) segmentedSounds.get(idx - 2);
+            Observation obsCurS2 = (Observation) segmentedSounds.get(idx - 1);
+            if ((obsLastS1.getNamePref().contentEquals("S1"))
+                    && (obsCurS2.getNamePref().contentEquals("S2"))) {
+                // Last S1 timing
+                int lastS1 = obsLastS1.getRawIndex();
+
+                // Current S2 timing
+                int curS2 = obsCurS2.getRawIndex();
+
+                // This S1 timing
+                int thisS1 = curPB;
+
+                // Is this OK?
+                if ((curS2 - lastS1) > (thisS1 - curS2)) {
+                    System.out.println("Not a S1");
+                    S1name = new String("S1alt");
+                } else {
+                    // S1name = new String("S1") ;
+                }
+            }
+        }
+        return S1name;
+    }
+
+    public void addEvents(Observation eventHMM) {
+        segmentedSounds.add(eventHMM);
+    }
+
+    public LinkedList getSegmentedBeats() {
+        return segmentedSounds;
+    }
+
+    private Observation recordHMMObs(
+            String pref, String sufx, int Sx,
+            int S1base, int S1next,
+            FindBeats norm) {
+        // make a string for the relative position of the event in the beat
+        // Obtain a FFT of the time between S1base and Sx and make a string of it
+        // First get the sample between S1base and Sx
+        float[] data = norm.getNormalizedData();
+        float[] sample = new float[(Sx - S1base) + 1];
+        /*
+        if (sample.length < 3) {
+            // not enough values in sample
+            return null;
+        }
+         */
+
+        // arraycopy(Object src, int srcPos, Object dest, int destPos, int length)
+        System.arraycopy(data, S1base, sample, 0, Sx - S1base);
+
+        // calculate a beat signature
+        FindEvents cef = new FindEvents();
+        LinkedList efft = cef.beatSign(norm, sample);
+
+        // For the HMM to separate the observations in more cases than S1-S4, we need to
+        // add a "minor" numbering to the "Sx" string.
+        Observation obs = new Observation(sample,
+                pref, sufx, Sx, efft);
+
+        return obs;
+    }
+
+    public LinkedList getSegmentedSounds() {
+        return segmentedSounds;
+    }
+
+    void incS1Counter() {
+        S1Counter++;
+    }
+
+    public int getS1Counter() {
+        return S1Counter;
+    }
+
+    void incS3Counter() {
+        S3Counter++;
+    }
+
+    public int getS3Counter() {
+        return S3Counter;
+    }
+
+    private void incSxCounter() {
+        SxCounter++;
+    }
+
+    public int getSxCounter() {
+        return SxCounter;
+    }
+
+    private void addS1Length(int S1Duration) {
+        S1sTotalDuration = S1Duration;
+    }
+
+    public int getS1Length() {
+        return S1sTotalDuration;
+    }
+}
