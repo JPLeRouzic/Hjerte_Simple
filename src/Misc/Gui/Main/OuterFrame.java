@@ -25,7 +25,9 @@ public class OuterFrame extends JFrame
     }
     
     public void featureSelectorPanel() {
-        (this.mainPanel = new MainPanel(this)).setBackground(Color.blue);
+        this.mainPanel = new MainPanel(this);
+        this.mainPanel.setPreferredSize(new Dimension(400, 150));
+        this.mainPanel.setBackground(Color.blue) ;
         this.add(this.mainPanel, "Center");
         this.pack();
         this.setVisible(true);
