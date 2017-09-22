@@ -52,7 +52,7 @@ public final class MainPanel extends JPanel implements ActionListener {
             this.addTableMouseListener();
             this.controll.viewFileInfoAction.setTable(this.heart_sound_files_table);
             // load the trained HMM
-            final File dest = new File("./HMM/trainedHMM_v0.2");
+            final File dest = new File("./HMM/trainedHMM_v0.3");
             fr = new FileReader(dest);
             LoadHMM.loadHMM(fr);
             try {
@@ -104,7 +104,7 @@ public final class MainPanel extends JPanel implements ActionListener {
                             if (scoreSx < 0.2) {
                                 // 0.2 > scoreSx >= 0.1
                                 simi.textArea.append("In addition one heart sound per " + String.valueOf(Math.round(1 / scoreSx)) + " beat(s) were not a classical S1 or S2 sound\n");
-                                simi.textArea.append("This ratio is not a problem, but you should record it every week and ");
+                                simi.textArea.append("\nThis ratio is not a problem, but you should record it every week and ");
                                 simi.textArea.append("make a do a weighted average on five last values\n");
                             } else {
                                 // 0.5 >= scoreSx >= 0.2
@@ -131,16 +131,14 @@ public final class MainPanel extends JPanel implements ActionListener {
                             // S3 is heard normally in 80% of pregnant women. 
                             final float s3Score = EntryPoint.hmmTest.getS3Score();
                             if ((s3Score > 0.1) && (s3Score < 0.8)) {
-                                simi.textArea.append("S3 score: " + (Math.round(s3Score * 100)) + "%\n");
+                                simi.textArea.append("\nS3 score: " + (Math.round(s3Score * 100)) + "%\n");
 
                                 simi.textArea.append("Too much S3 events means that the heart is not working as it should\n");
                                 simi.textArea.append("If this is detected consistently during several days \n");
                                 simi.textArea.append("It might be a good idea to consult your doctor\n\n");
                             }
-
-                            final float lvstScore = EntryPoint.hmmTest.getLVSTScore();
-                            simi.textArea.append("LVST score will be computed in a future version");
-
+//                            final float lvstScore = EntryPoint.hmmTest.getLVSTScore();
+//                            simi.textArea.append("LVST score will be computed in a future version");
                         }
 
                         simi.setDefaultCloseOperation(3);
