@@ -4,6 +4,7 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import javax.swing.JMenuBar;
 import Misc.Gui.Controller.Control;
+import java.awt.Dimension;
 import javax.swing.JFrame;
 
 public class OuterFrame extends JFrame
@@ -20,16 +21,7 @@ public class OuterFrame extends JFrame
         final Color blue = new Color(0.75f, 0.85f, 1.0f);
         this.getContentPane().setBackground(blue);
         (this.menu = new JMenuBar()).setBackground(blue);
-        this.setLayout(new BorderLayout(8, 8));
+        this.setLayout(new BorderLayout(4, 4));
         this.add(this.menu, "North");
-    }
-    
-    public void featureSelectorPanel() {
-        this.mainPanel = new MainPanel(this);
-        this.mainPanel.setPreferredSize(new Dimension(400, 150));
-        this.mainPanel.setBackground(Color.blue) ;
-        this.add(this.mainPanel, "Center");
-        this.pack();
-        this.setVisible(true);
     }
 }

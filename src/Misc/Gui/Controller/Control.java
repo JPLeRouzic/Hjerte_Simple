@@ -28,7 +28,7 @@ public class Control
         */
         filesList = new FilesTableModel(new Object[] {
             "Name", "Path"
-        }, 0, 60);
+        }, 0, 3);
         addRecordingsAction.setModel(this);
         viewFileInfoAction = new ViewFileInfoAction(this, recordTable);
     }
